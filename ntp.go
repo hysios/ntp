@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"sync"
 	"time"
 
 	"golang.org/x/net/ipv4"
@@ -410,18 +411,26 @@ func getTime(host string, opt QueryOptions) (*msg, ntpTime, error) {
 		xmitMsg.TransmitTime = toNtpTime(xmitTime)
 	}
 
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	go func(wg *sync.WaitGroup) {
+		// Receive the response.
+		err = binary.Read(con, binary.BigEndian, recvMsg)
+		wg.Done()
+	}(&wg)
+
 	// Transmit the query.
 	err = binary.Write(con, binary.BigEndian, xmitMsg)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	// Receive the response.
-	err = binary.Read(con, binary.BigEndian, recvMsg)
+	wg.Wait()
+
 	if err != nil {
 		return nil, 0, err
 	}
-
 	// Keep track of the time the response was received.
 	delta := time.Since(xmitTime)
 	if delta < 0 {
